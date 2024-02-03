@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 #Course- AESD
 #Author - Jayash Arun Raulkar

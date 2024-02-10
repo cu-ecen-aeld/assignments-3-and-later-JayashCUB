@@ -1,14 +1,13 @@
-Compiler := gcc
+CC=gcc
+CFLAGS=-Wall -Werror
 
-ifeq ($(CROSS_COMPILE),aarch64-none-linux-gnu-)
-	Compiler := aarch64-none-linux-gnu-gcc
-endif
+all : writer
 
-writer: writer.o
-	$(Compiler) writer.o -o writer
-	
-writer.o: writer.c
-	$(Compiler) -c writer.c
-	
-clean:
-	rm -f *.o writer
+writer : writer.o
+	$(CROSS_COMPILE)$(CC) $(CFLAGS) writer.o -o writer
+
+writer.o : writer.c
+	$(CROSS_COMPILE)$(CC) $(CFLAGS) -c writer.c -o writer.o
+
+clean :
+	rm -rf *.o writer

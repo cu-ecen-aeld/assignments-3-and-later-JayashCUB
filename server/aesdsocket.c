@@ -26,7 +26,12 @@
 #include "queue.h"
 
 #define PORT         		"9000"
-#define FILENAME      		"/var/tmp/aesdsocketdata"
+#define USE_AESD_CHAR_DEVICE   (1)
+#if (USE_AESD_CHAR_DEVICE == 0)
+    #define FILENAME           "/var/tmp/aesdsocketdata"
+#elif (USE_AESD_CHAR_DEVICE == 1)
+    #define FILENAME           "/dev/aesdchar"
+#endif
 #define BUFF_SIZE   		1024
 #define SUCCESS      		0
 #define FAILURE      		-1
@@ -49,6 +54,7 @@ void signal_handler(int signo);
 void close_n_exit(void);
 int run_as_daemon_func();
 
+#if (USE_AESD_CHAR_DEVICE == 0)
 void *timestamp_thread(void *thread_node)
 {
     	socket_node_t *node = NULL;
@@ -146,7 +152,7 @@ void *timestamp_thread(void *thread_node)
 	}
      	return thread_node;
 }
-
+#endif
 
 
 void *data_thread(void *thread_node)
@@ -215,15 +221,17 @@ void *data_thread(void *thread_node)
     	    } while (!packet_complete);
 
     	    packet_complete = false;
-
-    	    // Set file pos to begining of file
-    	    off_t offset = lseek(file_fd, 0, SEEK_SET);
-    	    if (offset == FAILURE)
-    	    {
-    	        syslog(LOG_ERR, "ERROR: Failed to SET file offset");
+	    
+            close(file_fd);
+            /* open file in read mode */
+            file_fd = open(FILENAME, O_RDONLY, S_IRUSR | S_IRGRP | S_IROTH);
+            if (FAILURE == file_fd)
+            {
+                syslog(LOG_ERR, "Error opening %s file: %s", FILENAME, strerror(errno));               
     	        status = FAILURE;
     	        goto exit;
     	    }
+
     	    // read till EOF 
     	    int read_bytes = 0;
     	    int send_bytes = 0;
@@ -398,7 +406,7 @@ int main(int argc, char *argv[])
         	goto exit;
     	}
 	
-	
+#if (USE_AESD_CHAR_DEVICE == 0)	
 	// Node for timestamp thread
     	data_ptr = (socket_node_t *)malloc(sizeof(socket_node_t));
     	if (data_ptr == NULL)
@@ -420,7 +428,7 @@ int main(int argc, char *argv[])
         	goto exit;
     	} 
     	SLIST_INSERT_HEAD(&head, data_ptr, node_count);
-	
+#endif	
     	
 	while(!exit_flag)
 	{
@@ -474,7 +482,6 @@ int main(int argc, char *argv[])
         	{
             		if (data_ptr->thread_complete == true)
             		{
-                		syslog(LOG_INFO, "1 Joined thread id: %ld", data_ptr->thread_id);
                 		pthread_join(data_ptr->thread_id, NULL);
                 		SLIST_REMOVE(&head, data_ptr, socket_node, node_count);
                 		free(data_ptr);
@@ -486,7 +493,7 @@ int main(int argc, char *argv[])
 	
 	exit:
     		close_n_exit();
-    		pthread_mutex_destroy(&thread_mutex);
+    		
     		while (!SLIST_EMPTY(&head))
     		{
         		data_ptr = SLIST_FIRST(&head);
@@ -495,6 +502,7 @@ int main(int argc, char *argv[])
         		free(data_ptr);
         		data_ptr = NULL;
     		}
+    		pthread_mutex_destroy(&thread_mutex);
     		printf("EXITING PROCESS\n");
     return status;       	
         	
@@ -524,7 +532,9 @@ void close_n_exit(void)
  	}
 
  	// Delete the file
- 	remove("/var/tmp/aesdsocketdata");
+ 	#if (USE_AESD_CHAR_DEVICE == 0)
+ 	remove(FILENAME);
+ 	#endif
 	
  	// Close syslog
  	syslog(LOG_INFO, "Closing syslog");

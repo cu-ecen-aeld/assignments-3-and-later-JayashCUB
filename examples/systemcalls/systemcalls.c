@@ -1,4 +1,10 @@
 #include "systemcalls.h"
+#include <stdlib.h>	//for system() call
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <stdio.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -16,8 +22,10 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
-
-    return true;
+ 
+	int ret;
+	ret=system(cmd);
+    	return ((ret == -1) ? false : true);
 }
 
 /**
@@ -59,9 +67,46 @@ bool do_exec(int count, ...)
  *
 */
 
+	fflush(stdout);	//avoid duplicate prints
+	int status;
+	pid_t pid;
+	
+	pid = fork();
+	
+	if(pid == -1)	//error in fork
+	{
+		return false;
+	}
+	else if(pid == 0)	//in the child process
+	{
+		int ret = execv(command[0], command);
+		
+		exit(ret);	//if execv fails
+	}
+	
+	//in the parent process
+	pid_t c_pid;
+	c_pid = waitpid(pid,&status,0);
+	
+	if(c_pid == -1)	//error in waitpid
+	{
+		return false;
+	}
+	
+	if(WIFEXITED(status))	//if normal termination
+	{
+		int ret = WEXITSTATUS(status);
+		return ((ret == 0) ? true : false); 
+	}
+	else			//if not normal termination
+	{
+		return false;
+	}
+	
+	
     va_end(args);
 
-    return true;
+    return false;
 }
 
 /**
@@ -93,7 +138,58 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *
 */
 
+	int fd = open(outputfile, O_WRONLY | O_TRUNC | O_CREAT , 0644);
+	if(fd < 0)
+	{
+		abort();
+	}
+	
+	fflush(stdout);	//avoid duplicate prints
+	int status;
+	pid_t pid;
+	
+	pid = fork();
+	
+	if(pid == -1)	//error in fork
+	{
+		return false;
+	}
+	else if(pid == 0)	//in the child process
+	{
+		if(dup2(fd,1) < 0)
+		{
+			abort();
+			return false;
+		}
+		close(fd);
+		int ret = execv(command[0], command);
+		
+		exit(ret);	//if execv fails
+	}
+	
+	//in the parent process
+	pid_t c_pid;
+	c_pid = waitpid(pid,&status,0);
+	close(fd);
+	
+	if(c_pid == -1)	//error in waitpid
+	{
+		return false;
+	}
+	
+	if(WIFEXITED(status))	//if normal termination
+	{
+		int ret = WEXITSTATUS(status);
+		return ((ret == 0) ? true : false); 
+	}
+	else			//if not normal termination
+	{
+		return false;
+	}
+	
+	
+	
     va_end(args);
 
-    return true;
+    return false;
 }

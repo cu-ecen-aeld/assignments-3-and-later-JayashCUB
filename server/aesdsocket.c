@@ -24,6 +24,7 @@
 #include <pthread.h>
 #include <time.h>
 #include "queue.h"
+#include "../aesd-char-driver/aesd_ioctl.h"
 
 #define PORT         		"9000"
 #define USE_AESD_CHAR_DEVICE   (1)
@@ -36,6 +37,7 @@
 #define SUCCESS      		0
 #define FAILURE      		-1
 #define DELAY_TIMEPERIOD	10
+#define MATCHED_INPUTS_COUNT   2
 
 int exit_flag = 0;
 int run_as_daemon = 0;
@@ -164,6 +166,9 @@ void *data_thread(void *thread_node)
     	socket_node_t *node = NULL;
     	int status = FAILURE;
     	int file_fd = -1;
+    	#if (USE_AESD_CHAR_DEVICE == 1)
+    	    const char *ioctl_str = "AESDCHAR_IOCSEEKTO:";
+	#endif
     	if (thread_node == NULL)
     	{
     	    return NULL;
@@ -191,6 +196,27 @@ void *data_thread(void *thread_node)
     	            status = FAILURE;
     	            goto exit;
     	        }
+    	        
+    	        #if (USE_AESD_CHAR_DEVICE == 1)
+            		if (SUCCESS == strncmp(buffer, ioctl_str, strlen(ioctl_str)))
+            		{
+                		struct aesd_seekto seek_info;
+                		if (MATCHED_INPUTS_COUNT != sscanf(buffer, "AESDCHAR_IOCSEEKTO:%d,%d",
+                                                   &seek_info.write_cmd,
+                                                   &seek_info.write_cmd_offset))
+                		{
+                    			syslog(LOG_PERROR, "sscanf: %s", strerror(errno));
+                		}
+                		else
+                		{
+                    			if(SUCCESS != ioctl(file_fd, AESDCHAR_IOCSEEKTO, &seek_info))
+                    			{
+                        			syslog(LOG_PERROR, "ioctl: %s", strerror(errno));
+                    			}
+                		}
+                		goto read_data;
+            		}
+		#endif
     	        
     	        if (pthread_mutex_lock(node->thread_mutex) != SUCCESS)
     	        {
@@ -221,7 +247,8 @@ void *data_thread(void *thread_node)
     	    } while (!packet_complete);
 
     	    packet_complete = false;
-	    
+
+#if (USE_AESD_CHAR_DEVICE == 0)	    
             close(file_fd);
             /* open file in read mode */
             file_fd = open(FILENAME, O_RDONLY, S_IRUSR | S_IRGRP | S_IROTH);
@@ -231,10 +258,13 @@ void *data_thread(void *thread_node)
     	        status = FAILURE;
     	        goto exit;
     	    }
+#endif
 
     	    // read till EOF 
     	    int read_bytes = 0;
     	    int send_bytes = 0;
+
+read_data:
     	    do
     	    {
     	        memset(buffer, 0, BUFF_SIZE);
